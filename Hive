@@ -1,1 +1,247 @@
 https://www.cnblogs.com/huifeidezhuzai/p/9251969.html
+
+Hive 数据存储
+
+1.Hive中的数据存储在HDFS中，没有专门的数据存储格式。只需要创建hive表格的时候，告诉hive数据中行和列的分割符，hive就可以解析。
+2.Hive 包含一下数据模型，db，table，external table， partition， bucket。
+ db：在hdfs中表现为${hive.matastore.warehouse.dir}目录下面的一个文件夹
+ table：db目录下的一个文件夹。
+ external table：于table类似，不过起数据可以存放在任何位置。
+ partition：表示为table下的子目录
+ bucket：表现为table目录或者partition目录下，根据hash值散列之后的多个文件。
+ 
+ Hive Shell
+ 
+  语法结构
+  hive [-hiveconf x=y]* [<-i filename>]* [<-f filename>|<-e query-string>] [-S]
+  
+  说明：
+  
+  1, -i 从文件初始化HQL，一般用来设置hive参数
+  2，-e 从命令行执行指定的HQL
+  3, -f 执行HQL 文件
+  4，-v 输出执行HQL语句到控制台
+ 
+ 
+ HQL
+ 1.DDL
+ 
+ 建表语法
+CREATE [EXTERNAL] TABLE [IF NOT EXISTS] table_name
+
+   [(col_name data_type [COMMENT col_comment], ...)]
+
+   [COMMENT table_comment]
+
+   [PARTITIONED BY (col_name data_type [COMMENT col_comment], ...)]
+
+   [CLUSTERED BY (col_name, col_name, ...)
+
+   [SORTED BY (col_name [ASC|DESC], ...)] INTO num_buckets BUCKETS]
+
+   [ROW FORMAT row_format]
+
+   [STORED AS file_format]
+
+   [LOCATION hdfs_path]
+   
+   1.创建内部表
+   create table if not exists mytable(sid int, sname string)
+   row format delimited fields terminated by '\005'
+   stored as textfile;
+   
+   2.创建外部表
+   create external table pageview (
+   pageid int,
+   page_url string
+   )
+   row format delimited fields terminated by ','
+   location 'hdfs://hadoop102:900/user/hive/warehouse';
+   
+   3.创建分区表
+   
+   create table if not exists student_p (
+    sno int,
+    sname string,
+    sdept string
+    )
+    partitioned by (ds string)
+    row format delimited fields terminated by '\t'
+    lines teminated by '\n'
+    stored as textfile;
+    
+    4.创建带桶的表
+    create table if not exists student_b (
+    sid int,
+    sage int,
+    sname string
+    )
+    partitioned by (s_date string)
+    clustered by (id) sorted by (age) into 2 buckets
+    row format delimited fields terminated by ','
+    ;
+    
+    修改分区表：
+    语法：
+    ALTER TABLE table_name ADD [IF NOT EXISTS] partition_spec [ LOCATION 'location1' ] partition_spec [ LOCATION 'location2' ] ...
+    实例：
+    alter table student_p add if not exists partition (ds='a') partition(ds='b');
+    --SHOW PARTITIONS student_p
+    
+    重命名表：
+    ALTER table student_p rename to westlife_stup;
+    
+    增加或者更新列：
+    语法：
+    ALTER TABLE table_name ADD|REPLACE COLUMNS (col_name data_type [COMMENT col_comment], ...)
+    注：ADD是代表新增一字段，字段位置在所有列后面(partition列前)，REPLACE则是表示替换表中所有字段。
+
+    实例：
+    ALTER TABLE westlife_stup ADD COLUMNS(Sex string);
+    --DESCRIBE  westlife_stup;
+    
+    显示命令：
+    show tables
+    show databases
+    show partitions partitionname
+    show functions functionname
+    desc extended t_name;
+    desc formatted table_name;
+    describe tablename；显示表结构
+    show create table tablename；显示表的创建语句
+    
+    
+    
+  2.DML
+  语法：
+  LOAD DATA [LOCAL] INPATH 'filepath' [OVERWRITE] INTO TABLE tablename [PARTITION (partcol1=val1, partcol2=val2 ...)]
+  
+  说明：
+  1、  Load 操作只是单纯的复制/移动操作，将数据文件移动到 Hive 表对应的位置。
+  2、  filepath：
+  相对路径，例如：project/data1
+  绝对路径，例如：/user/hive/project/data1
+  包含模式的完整 URI，列如：
+  hdfs://namenode:9000/user/hive/project/data1
+
+  3、  LOCAL关键字
+  如果指定了 LOCAL， load 命令会去查找本地文件系统中的 filepath。
+  如果没有指定 LOCAL 关键字，则根据inpath中的uri
+
+  如果指定了 LOCAL，那么：
+  load 命令会去查找本地文件系统中的 filepath。如果发现是相对路径，则路径会被解释为相对于当前用户的当前路径。
+  load 命令会将 filepath中的文件复制到目标文件系统中。目标文件系统由表的位置属性决定。被复制的数据文件移动到表的数据对应的位置。
+
+  如果没有指定 LOCAL 关键字，如果 filepath 指向的是一个完整的 URI，hive 会直接使用这个 URI。 否则：如果没有指定 schema 或者 authority，Hive 会使用在 hadoop 配置文件中定义的 schema 和 authority，fs.default.name 指定了 Namenode 的 URI。
+  如果路径不是绝对的，Hive 相对于/user/进行解释。
+  Hive 会将 filepath 中指定的文件内容移动到 table （或者 partition）所指定的路径中。
+
+  4、  OVERWRITE 关键字
+  如果使用了 OVERWRITE 关键字，则目标表（或者分区）中的内容会被删除，然后再将 filepath 指向的文件/目录中的内容添加到表/分区中。
+  如果目标表（分区）已经有一个文件，并且文件名和 filepath 中的文件名冲突，那么现有的文件会被新文件所替代。 
+   
+   
+   实例：
+   load data local inpath '/home/zhangju2/2.txt' into table db.student partiton(ds='b');
+   
+   
+ Insert
+ 将查询结果插入Hive表
+
+  语法结构
+
+  INSERT OVERWRITE TABLE tablename1 [PARTITION (partcol1=val1, partcol2=val2 ...)] select_statement1 FROM from_statement
+
+  Multiple inserts:
+
+  FROM from_statement
+
+  INSERT OVERWRITE TABLE tablename1 [PARTITION (partcol1=val1, partcol2=val2 ...)] select_statement1
+
+  [INSERT OVERWRITE TABLE tablename2 [PARTITION ...] select_statement2] ...
+
+
+  Dynamic partition inserts:
+
+  INSERT OVERWRITE TABLE tablename PARTITION (partcol1[=val1], partcol2[=val2] ...) select_statement FROM from_statement
+
+ 
+导出表数据
+
+语法结构
+
+INSERT OVERWRITE [LOCAL] DIRECTORY directory1 SELECT ... FROM ...
+
+
+multiple inserts:
+
+FROM from_statement
+
+INSERT OVERWRITE [LOCAL] DIRECTORY directory1 select_statement1
+
+[INSERT OVERWRITE [LOCAL] DIRECTORY directory2 select_statement2] ...
+说明：
+
+数据写入到文件系统时进行文本序列化，且每列用^A来区分，\n为换行符。用more命令查看时不容易看出分割符，可以使用: sed -e 's/\x01/|/g' filename[dht3] 来查看。
+
+SELECT:
+语法：
+SELECT [ALL | DISTINCT] select_expr, select_expr, ...
+FROM table_reference
+[WHERE where_condition]
+[GROUP BY col_list [HAVING condition]]
+[CLUSTER BY col_list
+  | [DISTRIBUTE BY col_list] [SORT BY| ORDER BY col_list]
+]
+[LIMIT number]
+
+说明：
+1.order by 会对输入做全局排序，因此只有一个reducer，这会导致在数据量较大的是，运行非常慢。
+2.sort by 不是全局排序，其在数据进入reducer之前完成排序，因此如果使用sort by进行排序，并设置reducetask>1， 则sort by只能保证每一个reduce的输出的结果内部是有序，不能保证全局有序。
+3.distribute by（字段），是根据指定的字段将数据分配到不同的reducer，且分发算法是hash散列，
+4.Cluster by（字段），除了具有distribute by 的功能外，还会对该字段进行排序。
+因此，如果分桶和sort字段是同一个时，此时，cluster by = distribute by + sort by
+
+分桶的作用：
+最大的作用是在join的时候提高效率，如果连个表的join字段刚好是分桶字段，那么就不需要全表做笛卡尔积。
+
+Hive JOIN:
+语法：
+join_table:
+  table_reference JOIN table_factor [join_condition]
+  | table_reference {LEFT|RIGHT|FULL} [OUTER] JOIN table_reference join_condition
+  | table_reference LEFT SEMI JOIN table_reference join_condition
+Hive 支持等值连接（equality joins）、外连接（outer joins）和（left/right joins）。Hive 不支持非等值的连接，因为非等值连接非常难转化到 map/reduce 任务。
+另外，Hive 支持多于 2 个表的连接。
+写 join 查询时，需要注意几个关键点：
+
+
+说明：
+1.hive只支持等值连接。
+
+select A.* from A join B on(a.id=b.id);  --正确
+select A.* from A join B on(a.id=b.id and a.dept=b.dept); --正确
+select A.* from A join B on (a.id > b.id) --错误
+
+2.hive可以join多个表
+select A.* from A join B on (A.key1=b.key1) join C on (b.key1=c.key1) --join中使用了同一个key，该join会被转化成以一个mapreduce程序。
+select A* from A join B on (a.key1=b.key1) join C on (b.key2=c.key2) -- join中使用了多个key，该join会倍转化成两个mapreduce程序。
+
+3.join时，每次mapreduce的任务逻辑：
+reduce会缓存join序列中除了最后一个表的的所有表的记录，再通过最后一个表将结果序列化到文件系统。这一实现有助于在reduce端减少内存的使用量。 所以在实践中一般将最大的表写在最后。
+
+4．LEFT，RIGHT 和 FULL OUTER 关键字用于处理 join 中空记录的情况
+
+5.join发生在 where语句之前。
+  SELECT a.val, b.val FROM a
+  LEFT OUTER JOIN b ON (a.key=b.key)
+  WHERE a.ds='2009-07-07' AND b.ds='2009-07-07'；
+  
+  SELECT a.val1, a.val2, b.val, c.val
+  FROM a
+  JOIN b ON (a.key = b.key)
+  LEFT OUTER JOIN c ON (a.key = c.key)
+
+
+
+
