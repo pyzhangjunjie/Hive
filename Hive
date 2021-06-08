@@ -1,4 +1,7 @@
 https://www.cnblogs.com/huifeidezhuzai/p/9251969.html
+Hive数据类型:
+
+
 
 Hive 数据存储
 
@@ -273,19 +276,14 @@ l  默认配置文件：$HIVE_CONF_DIR/hive-default.xml
 
 
 命令行参数：启动Hive（客户端或Server方式）时，可以在命令行添加-hiveconf param=value来设定参数，例如：
-
 bin/hive -hiveconf hive.root.logger=INFO,console
-
 这一设定对本次启动的Session（对于Server方式启动，则是所有请求的Sessions）有效。
-
  
 
 参数声明：可以在HQL中使用SET关键字设定参数，例如：
 
 set mapred.reduce.tasks=100;
-
 这一设定的作用域也是session级的。
-
 上述三种设定方式的优先级依次递增。即参数声明覆盖命令行参数，命令行参数覆盖配置文件设定。注意某些系统级的参数，例如log4j相关的设定，必须用前两种方式设定，因为那些参数的读取在Session建立以前已经完成了。
 
 
