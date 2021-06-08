@@ -1,0 +1,153 @@
+##https://www.cnblogs.com/fnlingnzb-learner/p/13087976.html
+
+优化的指导思想：
+1.尽快尽早过滤数据，减少每个阶段的数据量。
+2.减少mapreduce job的数量。
+3.避免数据倾斜。
+
+1.列裁剪：
+
+例如某表有a,b,c,d,e五个字段，但是我们只需要a和b，那么请用select a,b from table 而不是select * from table
+
+2.分区裁剪：
+
+在查询的过程中减少不必要的分区，即尽量指定分区
+
+3.利用hive的优化机制减少job数：
+
+不论是外关联outer join还是内关联inner join，如果join的key相同，不管有多少表，都会合并为一个MapReduce任务：
+
+select a.val,b.val,c.val from a JOIN b ON (a.key = b.key1) JOIN c ON (c.key2 = b.key1)    ----一个job
+
+select a.val,b.val,c.val from a JOIN b ON (a.key = b.key1) JOIN c ON (c.key2 = b.key2)    ----两个job
+4.善用multi-insert:
+
+
+#查询了两次a
+insert overwrite table tmp1
+select ... from a where 条件1;
+insert overwrite table tmp2
+select ... from a where 条件2;
+
+#查询了一次a
+from a
+insert overwrite table tmp1
+select ... where 条件1
+insert overwrite table tmp2
+select ... where 条件2
+
+5.善用union all:
+
+不同表的union all相当于multi inputs，同一表的union all相当于map一次输出多条
+
+6.避免笛卡尔积：关联的时候一定要写关联条件
+
+7.join前过滤掉不需要的数据
+
+
+#hive0.12之前，会先把a全部数据和b的全部数据进行了关联，然后再筛选条件，0.12之后做了优化
+1. select a.val,b.val from a LEFT OUTER JOIN b ON (a.key=b.key)where a.dt='2020-05-07' and b.dt='2020-05-07'
+
+#优化后的方案
+2.select x.val,y.val from 
+(select key, val from a where a.dt='2020-05-07') x
+LEFT OUTER JOIN
+(select key, val from b where b.dt='2020-05-07') y
+ON x.key=y.key
+
+
+8.小表放前大表放后
+
+在编写带有join的代码语句时，应该将条目少的表/子查询放在join操作符的前面
+
+因为在Reduce阶段，位于join操作符左边的表会先被加载到内存，载入条目较少的表可以有效的防止内存溢出(OOM)。所以对于同一个key来说，对应的value值小的放前面，大的放后面
+
+9.在map阶段进行join
+
+join阶段有两种，一种是在map阶段进行的，一种是在reduce阶段进行的。当小表和大表进行join时，尽量采用mapjoin，即在map端完成，尽早结合数据，使reduce端接收数据量减少。同时可以避免小表与大表join产生的数据倾斜。
+
+如果一个表特别小，推荐用mapjoin；如果不是，我们一般用reduce join
+
+MAPJOIN写法：
+select /*+ MAPJOIN(b) */ a.value,b.value from a join b on a.key=b.key
+
+##http://blog.itpub.net/31511218/viewspace-2150053/
+##https://cloud.tencent.com/developer/article/1481780
+
+MapJoin通常用于一个很小的表和一个大表进行join的场景，具体小表有多小，由参数hive.mapjoin.smalltable.filesize来决定，该参数表示小表的总大小，默认值为25000000字节，即25M。
+Hive0.7之前，需要使用hint提示 /*+ mapjoin(table) */才会执行MapJoin,否则执行Common Join，但在0.7版本之后，默认自动会转换Map Join，由参数hive.auto.convert.join来控制，默认为true.
+假设a表为一张大表，b为小表，并且hive.auto.convert.join=true,那么Hive在执行时候会自动转化为MapJoin。
+
+使用MAPJOIN可解决以下实际问题：
+1、有一个极小的表<100行（d表是部门）
+2、需要做不等值join操作（a.x<b.y或者a.x like="" b.y等）。普通join语法不支持不等于操作，hive语法解析会直接抛出错误。="" 五、相关参数
+
+10.hive0.13之前实现IN和EXISTS
+
+LEFT SEMI JOIN是IN和EXISTS的一种高效实现，在hive0.13之前是不支持IN和EXISTS的
+
+
+1.select a.key,a.value from a where a.key in (select b.key from b)（hive0.13前不支持）
+
+2.select a.key,a.value from a left outer join b on a.key=b.key where b.key is not null
+
+3.select a.key,a.value from a left semi join b on a.key=b.key
+
+4.select a.key,a.value from a JOIN b ON (a.key=b.key) 
+LEFT SEMI JOIN产生的数据不会重复。
+
+11.使用动态分区
+set hive.exec.dynamic.partition=true;
+set hive.exec.dynamic.partition.mode=nonstrict;
+
+create table my_table(
+id bigint
+) partitioned by(dt string)
+STORED AS TEXTFILE;
+
+insert overwrite table my_table partition(dt)
+select id,dt from tmp_table
+
+12.union all优化
+
+hive0.13之前不支持union all直接放外层，必须外层套一个查询，例如：
+
+select key,value from a
+union all
+select key,value from b
+是不支持的。
+
+hive对union all的优化只局限于非嵌套查询。
+
+复制代码
+select * from(
+select key,value from a group by key,value
+union all
+select key,value from b group by key,value
+)
+---- 三个job
+
+select key,value from(
+select key,value from a union all
+select key,value from b
+) as tmp
+group by tmp.key,tmp.value
+---- 一个job，用于小表
+不同表太多的union all，不推荐使用。可以写在中间表的不同分区里，然后再进行union all
+
+13.尽量避免使用distinct
+
+尽量避免使用distinct进行重排，特别是大表，容易产生数据倾斜(key一样在一个reduce处理)。使用group by替代
+
+select distinct key from a
+
+select key from a group by key
+
+14.排序优化
+
+只有order by产生的结果是全局有序的，可以根据实际场景进行选择排序
+
+order by实现全局排序，一个reduce实现，由于不能并发执行，所以效率低
+sort by实现部分有序，单个reduce的输出结果是有序的，效率高，通常与distribute by一起使用(distribute by 关键词可以指定map到reduce的key分发)
+cluster by col1等价于distribute by col1 sort by col1，但不能指定排序规则
+15.使用explain dependency查看sql实际扫描多少分区
