@@ -6,11 +6,12 @@ Hive数据类型:
 Hive 数据存储
 
 1.Hive中的数据存储在HDFS中，没有专门的数据存储格式。只需要创建hive表格的时候，告诉hive数据中行和列的分割符，hive就可以解析。
-2.Hive 包含一下数据模型，db，table，external table， partition， bucket。
+2.Hive 包含以下数据模型，db，table，external table， partition， bucket。
+
  db：在hdfs中表现为${hive.matastore.warehouse.dir}目录下面的一个文件夹
  table：db目录下的一个文件夹。
- external table：于table类似，不过起数据可以存放在任何位置。
- partition：表示为table下的子目录
+ external table：于table类似，不过其数据可以存放在任何位置。
+ partition：表示为table下的子目录。
  bucket：表现为table目录或者partition目录下，根据hash值散列之后的多个文件。
  
  Hive Shell
